@@ -4,7 +4,7 @@ metadata:
   name: admin-global
 subjects:
 - kind: User
-  name: federated-admin
+  name: fed-admin
   apiGroup: rbac.authorization.k8s.io
 - kind: User
   name: local-admin
