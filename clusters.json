@@ -1,0 +1,7 @@
+{
+    "clusters":[
+        {"name":"test-eks-3"},
+        {"name":"test-eks-4"},
+        {"name":"test-eks-5"}
+    ]
+}

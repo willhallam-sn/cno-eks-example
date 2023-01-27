@@ -1,0 +1,208 @@
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: NAMESPACE_VALUE
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: servicenow
+  namespace: NAMESPACE_VALUE
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: servicenow
+  namespace: NAMESPACE_VALUE
+rules:
+  - apiGroups:
+      - '*'
+    resources:
+      - '*'
+    verbs:
+      - get
+      - list
+      - watch
+  - nonResourceURLs:
+      - /metrics
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: servicenow-NAMESPACE_VALUE
+  namespace: NAMESPACE_VALUE
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: servicenow
+subjects:
+  - kind: ServiceAccount
+    name: servicenow
+    namespace: NAMESPACE_VALUE
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: servicenow-INSTANCE_NAME-cred
+  namespace: NAMESPACE_VALUE
+data:
+  username: INSTANCE_USERNAME_VALUE
+  password: INSTANCE_PASSWORD_VALUE
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: servicenow-INSTANCE_NAME-mid-api-key-cred
+  namespace: NAMESPACE_VALUE
+data:
+  apikey: MID_API_KEY_VALUE
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sn-acc-proxy-INSTANCE_NAME
+  namespace: NAMESPACE_VALUE
+  labels:
+    run: sn-acc-proxy-INSTANCE_NAME
+spec:
+  ports:
+    - port: 3032
+      targetPort : 3032
+      protocol: TCP
+  selector:
+    app: sn-acc-mid-INSTANCE_NAME
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sn-acc-mid-SUFFIX_UID_SHORT
+  namespace: NAMESPACE_VALUE
+  labels:
+    app: sn-acc-mid-INSTANCE_NAME
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: midconfig
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 10Mi
+  replicas: 1
+  serviceName: sn-acc-mid-INSTANCE_NAME
+  selector:
+    matchLabels:
+      app: sn-acc-mid-INSTANCE_NAME
+  template:
+    metadata:
+      labels:
+        app: sn-acc-mid-INSTANCE_NAME
+    spec:
+      serviceAccountName: servicenow
+      # Uncomment this section if your image is stored in a private repository
+      #  and requires authentication
+      # Create a secret in the same namespace of CNO StatefulSet
+      # Reference: https://kubernetes.io/docs/tasks/configmap-secret/managing-secret-using-kubectl/#create-a-secret
+      # Update the secret name accordingly
+      # -------Uncomment below---------
+      #      imagePullSecrets:
+      #        - name: regcred
+      securityContext:
+        fsGroup: 1001
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: sn-acc-mid
+          image: servicenowdocker/mid:1.0.0_release_cno_k8s_3.0.0.2.91f9a02
+          imagePullPolicy: Always
+          securityContext:
+            privileged: false
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+          lifecycle:
+            preStop:
+              exec:
+                command: [ "/bin/sh", "/opt/snc_mid_server/pre_stop.sh" ]
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1500m"
+              memory: "2Gi"
+          env:
+            - name: CLUSTER_NAME
+              value: CLUSTER_NAME_VALUE
+            - name: SN_INSTANCE
+              value: INSTANCE_NAME
+            - name: MID_INSTANCE_URL
+              value: https://INSTANCE_FQDN
+            - name: MID_INSTANCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: servicenow-INSTANCE_NAME-cred
+                  key:  username
+            - name: MID_INSTANCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: servicenow-INSTANCE_NAME-cred
+                  key:  password
+            - name: MID_PROXY_ENABLED
+              value: "false"
+            - name: MID_PROXY_HOST
+              value: ""
+            - name: MID_PROXY_PORT
+              value: ""
+            - name: MID_K8S_MOD
+              value: ENABLED
+          volumeMounts:
+            - name: midconfig
+              mountPath: /midconfig
+        - name: sn-acc
+          image: servicenowdocker/acc:1.0.0_release_cno_k8s_3.0.0.2.91f9a02
+          imagePullPolicy: Always
+          securityContext:
+            privileged: false
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "100Mi"
+            limits:
+              cpu: "2000m"
+              memory: "200Mi"
+          env:
+            - name: SN_INSTANCE
+              value: INSTANCE_NAME
+            - name: ACC_MID_URL
+              value: wss://127.0.0.1:8800
+            - name: ACC_MID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: servicenow-INSTANCE_NAME-mid-api-key-cred
+                  key: apikey
+            - name: ENABLE_API
+              value: ENABLED
+            - name: ACC_DISABLE_ALLOW_LIST
+              value: "false"
+            - name: ACC_PLUGIN_VERIFICATION
+              value: "true"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sn-acc-mid-INSTANCE_NAME
+  namespace: NAMESPACE_VALUE
+  labels:
+    run: sn-acc-mid-INSTANCE_NAME
+spec:
+  ports:
+    - port: 8800
+      targetPort : 8800
+      protocol: TCP
+  selector:
+    app: sn-acc-mid-INSTANCE_NAME
